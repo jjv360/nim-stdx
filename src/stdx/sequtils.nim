@@ -71,10 +71,21 @@ proc getOrDefault* [T] (this: openarray[T], idx: int, default: T = nil): T =
 
 proc allZero* [T] (data : openarray[T]) : bool =
     ##
-    ## Check if a sequence of items is all zeroes.
+    ## Check if a sequence of items is filled with zero or null data.
     ##
 
     for i in 0 ..< data.len:
         if data[i] != 0: return false
+
+    return true
+
+
+proc allZero* (data : string) : bool =
+    ##
+    ## Check if a string is filled with null bytes.
+    ##
+
+    for i in 0 ..< data.len:
+        if data[i] != 0.char: return false
 
     return true

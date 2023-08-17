@@ -74,6 +74,8 @@ Because I keep finding myself adding little one-line functions to my projects, a
     - `execAsync` - Run asynchronously.
     - `execElevatedAsync` - Run asynchronously with admin privileges. _(Windows only)_
 
+    <br/>
+
     > **Note:** On Windows, it's impossible to attach to the stdout/stderr streams of a higher-level process, so you won't see the output from elevated commands.
 
     ```nim
@@ -112,7 +114,7 @@ Because I keep finding myself adding little one-line functions to my projects, a
 
 - `allZero()`
 
-    Returns true if all items in the `seq` are zeroed or null.
+    Returns true if all items in the `seq` are zeroed or null. Works with strings too.
 
     ```nim
     var items = @[0, 0, 0, 0, 0]
@@ -122,19 +124,10 @@ Because I keep finding myself adding little one-line functions to my projects, a
 
 ### `stdx/strutils`
 
-- `toString()`
+- `newString()` with filled bytes
     
-    Convert an array to a string of raw bytes.
-
-    ```nim
-    var items : seq[uint8] = @[0, 1, 2, 3, 4]
-    var bytes : string = items.toString()
-    ```
-
-- `toBytes()`
-    
-    Convert a string to a byte array. No null-terminator is added.
+    Creates a string of the specified length with all bytes set to a value.
     
     ```nim
-    var bytes : seq[uint8] = "Hello, world!".toBytes()
+    var str = newString(512, filledWith = 'A')
     ```
