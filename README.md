@@ -18,6 +18,24 @@ Because I keep finding myself adding little one-line functions to my projects, a
 
 ## API Reference
 
+### `stdx/asyncdispatch`
+
+- `awaitThread()`
+
+    Runs the clode block in a new thread and waits for it to finish with asyncdispatch. The specified vars are copied to the thread and are copied back afterwards.
+
+    ```nim
+    # Captured vars
+    var myVar = 0
+
+    # Run the thread and `await` it
+    awaitThread(myVar):
+        myVar = 1
+
+    # Results are copied back
+    echo myVar # 1
+    ``````
+
 ### `stdx/dynlib`
 
 - `dynamicImport()`

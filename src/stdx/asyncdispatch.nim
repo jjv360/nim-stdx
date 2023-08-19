@@ -3,7 +3,6 @@ import std/asyncdispatch
 export asyncdispatch
 
 
-
 proc readLine*(fd : AsyncFD) : Future[string] {.async.} =
     ##
     ## Read a line of text from an async socket
@@ -35,135 +34,6 @@ proc readLine*(fd : AsyncFD) : Future[string] {.async.} =
     return line
 
 
-# proc asyncThreadProc*(code : proc() {.thread.}) : Future[void] {.async.} =
-#     ##
-#     ## Run a procedure in a separate thread.
-#     ## This example is literally in the docs, not sure why it's not part of the standard...
-#     ## https://nim-lang.org/docs/system.html#example
-#     ## 
-
-#     # Create a channel to communicate with the thread
-#     var channel : Channel[ref Exception]
-
-#     # Start the thread
-#     var thread : Thread[void]
-#     thread.createThread(proc() {.thread, nimcall.} =
-
-#         # Catch errors
-#         try:
-
-#             # Run their code
-#             code()
-
-#             # Send the successful result
-#             channel.send(nil)
-
-#         except:
-
-#             # Send the error
-#             var err = getCurrentException()
-#             channel.send(err)
-
-#     )
-
-#     # Wait for thread to finish
-#     var outputError : ref Exception = nil
-#     while true:
-
-#         # Check if done
-#         let state = channel.tryRecv()
-#         if state.dataAvailable:
-#             outputError = state.msg
-#             break
-
-#         # Not done yet, wait a bit
-#         await sleepAsync(10)
-
-#     # Wait for the thread to clean up
-#     thread.joinThread()
-
-#     # Close the channel
-#     channel.close()
-
-#     # Check result
-#     if outputError != nil:
-#         raise outputError
-
-
-# proc asyncThreadProc* [T] (code : proc() : T {.thread.}) : Future[T] {.async.} =
-#     ##
-#     ## Run a procedure in a separate thread with a result type.
-#     ## This example is literally in the docs, not sure why it's not part of the standard...
-#     ## https://nim-lang.org/docs/system.html#example
-#     ## 
-    
-#     # Async thread result type
-#     type AsyncThreadResultType = object
-#         error : ref Exception
-#         result : T
-
-#     # Create a channel to communicate with the thread
-#     var channelOut : Channel[AsyncThreadResultType]
-
-#     # Start the thread
-#     var thread : Thread[void]
-#     thread.createThread(proc() {.thread.} =
-
-#         # Catch errors
-#         try:
-
-#             # Run their code
-#             var output : AsyncThreadResultType
-#             output.result = code()
-
-#             # Send the successful result
-#             channel.send(output)
-
-#         except:
-
-#             # Send the error
-#             var output : AsyncThreadResultType
-#             output.error = getCurrentException()
-#             channel.send(output)
-
-#     )
-
-#     # Wait for thread to finish
-#     var output : AsyncThreadResultType
-#     while true:
-
-#         # Check if done
-#         let state = channel.tryRecv()
-#         if state.dataAvailable:
-#             output = state.msg
-#             break
-
-#         # Not done yet, wait a bit
-#         await sleepAsync(10)
-
-#     # Wait for the thread to clean up
-#     thread.joinThread()
-
-#     # Close the channel
-#     channel.close()
-
-#     # Check result
-#     if output.error != nil:
-#         raise output.error
-#     else:
-#         return output.result
-
-
-# template asyncThread* [T] (code : untyped) : untyped =
-#     ##
-#     ## Run a procedure in a separate thread.
-#     ## This example is literally in the docs, not sure why it's not part of the standard...
-#     ## https://nim-lang.org/docs/system.html#example
-#     ## 
-    
-#     asyncThreadProc[T](proc() : T {.thread.} = code)
-
-
 proc stdx_processAwaitThread(capturedSymbols : seq[NimNode], codeBlock : NimNode) : NimNode =
     ##
     ## Processes the code for the 'awaitThread' macros. The process for this is to generate code which captures
@@ -171,76 +41,174 @@ proc stdx_processAwaitThread(capturedSymbols : seq[NimNode], codeBlock : NimNode
     ## After that, it will await the thread result, and copy the modifiable vars back over to the parent thread.
     ## 
     
-    echo "===> stdx_processAwaitThread()"
-    for s in capturedSymbols: 
-        echo "Var: " & $s 
-        echo " - Symbol kind: " & $s.symKind
-        echo " - Type: " & s.getTypeInst().repr
+    # Unique ident suffix
+    var lastIdentSuffix {.global.} = 0
+    lastIdentSuffix += 1
+    let identSuffix = "_gen_" & $lastIdentSuffix
+    
+    # echo "===> stdx_processAwaitThread()"
+    # for s in capturedSymbols: 
+    #     echo "Var: " & $s 
+    #     echo " - Symbol kind: " & $s.symKind
+    #     echo " - Type: " & s.getTypeInst().repr
 
-    # Create statement list
-    var outputCode = newStmtList()
+    # Var names used in multiple code blocks
+    var errorVarName = ident("err" & identSuffix)
+    var payloadVarName = ident("payload" & identSuffix)
+
 
     # Create definition of the data passing var. This is a tuple that contains an error field and the captured vars.
-    var DataType = genSym(nskType, "AsyncThreadDataType")
-    var typeDefinition = quote do:
-        type `DataType` = tuple[err : ref Exception]
+    var tupleTypeDefinition = quote do:
+        tuple[`errorVarName` : ref Exception]
     for capturedSymbol in capturedSymbols:
         var tupleField = newNimNode(nnkIdentDefs, capturedSymbol)
         tupleField.add(ident($capturedSymbol))
         tupleField.add(capturedSymbol.getTypeInst())
         tupleField.add(newEmptyNode())
-        typeDefinition[0][2].add(tupleField)
-    outputCode.add(typeDefinition)
+        tupleTypeDefinition.add(tupleField)
 
-    # Create the channel var
-    var channelOutVar = genSym(nskVar, "awaitThreadChannelOut")
-    var channelInVar = genSym(nskVar, "awaitThreadChannelIn")
-    outputCode.add(quote do:
-        var `channelOutVar` : Channel[`DataType`]
-        var `channelInVar` : Channel[`DataType`]
+    # Create code to copy vars into the payload
+    var varsCopyIn = newStmtList()
+    varsCopyIn.add(quote do:
+        `payloadVarName`.`errorVarName` = `errorVarName`
     )
+    for capturedSymbol in capturedSymbols:
+        let capturedSymbolIdent = ident($capturedSymbol)
+        varsCopyIn.add(quote do:
+            `payloadVarName`.`capturedSymbolIdent` = `capturedSymbolIdent`
+        )
 
-    # Create the thread var
-    var threadVar = genSym(nskVar, "awaitThreadThread")
-    outputCode.add(quote do:
-        var `threadVar` : Thread[void]
+    # Create code to copy vars out of the payload and create new variables for them
+    var varsCreateOut = newStmtList()
+    varsCreateOut.add(quote do:
+        var `errorVarName` = `payloadVarName`.`errorVarName`
     )
+    for capturedSymbol in capturedSymbols:
 
-    # Build the data payload with the current var content and send to the thread
+        # Check if it's a writable type
+        let capturedSymbolIdent = ident($capturedSymbol)
+        if capturedSymbol.symKind == nskVar:
 
-    # Create thread code
-    outputCode.add(quote do:
-        `threadVar`.createThread(proc() {.thread, nimcall.} =
+            # Create as a var
+            varsCreateOut.add(quote do:
+                var `capturedSymbolIdent` = `payloadVarName`.`capturedSymbolIdent`
+            )
+
+        else:
+
+            # Create as a let
+            varsCreateOut.add(quote do:
+                let `capturedSymbolIdent` = `payloadVarName`.`capturedSymbolIdent`
+            )
+
+    # Create code to copy vars out of the payload into existing variables
+    var varsCopyOut = newStmtList()
+    varsCopyOut.add(quote do:
+        `errorVarName` = `payloadVarName`.`errorVarName`
+    )
+    for capturedSymbol in capturedSymbols:
+
+        # Check if it's a writable type
+        let capturedSymbolIdent = ident($capturedSymbol)
+        if capturedSymbol.symKind == nskVar:
+
+            # Create as a var
+            varsCopyOut.add(quote do:
+                `capturedSymbolIdent` = `payloadVarName`.`capturedSymbolIdent`
+            )
+
+        else:
+
+            # Skip it if it's not writable
+            continue
+
+
+    # Output code template
+    var outputCode = quote do:
+
+        # Create type definition, containing the error and captured vars
+        type AwaitThreadDataPayload = `tupleTypeDefinition`
+
+        # Create the channel var
+        type DataChannel = Channel[AwaitThreadDataPayload]
+        var channelInPtr = cast[ptr DataChannel](allocShared0(sizeof(DataChannel)))
+        var channelOutPtr = cast[ptr DataChannel](allocShared0(sizeof(DataChannel)))
+
+        # Open channel
+        channelInPtr[].open()
+        channelOutPtr[].open()
+        
+        # Build payload
+        var `errorVarName` : ref Exception = nil 
+        var `payloadVarName` : AwaitThreadDataPayload
+        `varsCopyIn`
+
+        # Send it
+        channelInPtr[].send(`payloadVarName`)
+
+        # Create thread (doing it this was to avoid the "cannot generate destructor for generic type: Thread" error)
+        type DataThread = Thread[tuple[inPtr : ptr DataChannel, outPtr : ptr DataChannel]]
+        var threadPtr = cast[ptr DataThread](allocShared0(sizeof(DataThread)))
+
+        # Start the thread
+        threadPtr[].createThread(proc(channels : tuple[inPtr : ptr DataChannel, outPtr : ptr DataChannel]) {.thread, nimcall.} =
 
             # Catch errors
             try:
 
                 # Extract vars so they appear the same in the user's code
-                var output : `DataType`
-                PULL_VARS   # <-- Will be replaced later
+                var `payloadVarName` : AwaitThreadDataPayload = channels.inPtr[].recv()
+                `varsCreateOut`
                 
                 # Run their code
                 `codeBlock`
 
                 # Send result back
-                PUSH_VARS   # <-- Will be replaced later
-                `channelInVar`.send(output)
+                `varsCopyIn`
+                channels.outPtr[].send(`payloadVarName`)
+                
+            except Exception:
 
-            except:
+                # Capture error and send it back
+                var output : AwaitThreadDataPayload
+                output.`errorVarName` = getCurrentException()
+                channels.outPtr[].send(output)
 
-                # Capture error
-                var output : `DataType`
-                output.err = getCurrentException()
-                `channelInVar`.send(output)
+        , (channelInPtr, channelOutPtr))
 
-        )
-    )
+        # Wait for thread to finish
+        while true:
 
+            # Check if done
+            let state = channelOutPtr[].tryRecv()
+            if state.dataAvailable:
+                `payloadVarName` = state.msg
+                break
+
+            # Not done yet, wait a bit
+            await sleepAsync(1)
+
+        # Wait for the thread to clean up
+        threadPtr[].joinThread()
+
+        # Close the channel
+        channelInPtr[].close()
+        channelOutPtr[].close()
+        deallocShared(channelInPtr)
+        deallocShared(channelOutPtr)
+        deallocShared(threadPtr)
+
+        # Check result
+        if `payloadVarName`.`errorVarName` != nil:
+            raise `payloadVarName`.`errorVarName`
+        
+        # Copy resulting vars back out to the source code
+        `varsCopyOut`
 
     # Done
-    echo "Output code:"
-    echo outputCode.repr
-    echo ""
+    # echo "Output code:"
+    # echo outputCode.repr
+    # echo ""
     return outputCode
     
 
@@ -257,7 +225,7 @@ macro awaitThread*(codeBlock: untyped) =
 
 macro awaitThread*(capturedVars : varargs[typed], codeBlock: untyped) =
     ##
-    ## Run a procedure in a separate thread and wait for it to finish. This variant captured the specified list of vars.
+    ## Run a procedure in a separate thread and wait for it to finish. This variant captures the specified list of vars.
     ## 
     
     # List of supported symbol types that can be captured
