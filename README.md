@@ -34,7 +34,7 @@ Because I keep finding myself adding little one-line functions to my projects, a
 
     # Results are copied back
     echo myVar # 1
-    ``````
+    ```
 
 ### `stdx/dynlib`
 
@@ -148,4 +148,30 @@ Because I keep finding myself adding little one-line functions to my projects, a
     
     ```nim
     var str = newString(512, filledWith = 'A')
+    ```
+
+### `stdx/winlean`
+
+- `getLastErrorString()` / `raiseLastError(prefix)`
+
+    Get or raise the last WinAPI error as a Nim error.
+
+    ```nim
+    # Get the last error as a string
+    echo getLastErrorString()
+
+    # Raise the last error as a Nim error
+    raiseLastError("Unable to perform action.")
+    ```
+
+- `startWindowsEventLoop()` with async support
+
+    Starts the standard Windows event loop (GetMessage/TranslateMessage/DispatchMessage) in a way that's compatible with asyncdispatch. If it's called multiple times, it will still only start the loop once.
+
+    ```nim
+    # Start the loop in parallel
+    asyncCheck startWindowsEventLoop()
+
+    # Ensure asyncdispatch is running
+    drain(int.high)
     ```

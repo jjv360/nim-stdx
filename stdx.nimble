@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.0"
+version       = "0.1.2"
 author        = "jjv360"
 description   = "A collection of extra utilities for Nim."
 license       = "MIT"
