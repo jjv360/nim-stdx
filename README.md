@@ -10,7 +10,7 @@ import std/sequtils
 import stdx/sequtils
 ```
 
-You can install `stdx` by running `nimble install https://github.com/jjv360/nim-stdx`
+You can install `stdx` by running `nimble install stdx`
 
 ## Why this?
 
