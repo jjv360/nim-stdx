@@ -1,21 +1,21 @@
+import std/asyncdispatch
+import std/os
+export os
 
-## This whole module is only for Windows
+## Windows stuff
 when defined(windows):
-
     import winim/lean
-    import std/asyncdispatch
-    import std/os
-    export os
 
 
-    proc startNativeEventLoop*() {.async.} =
-        ##
-        ## Runs the Windows event loop in a manner that's compatible with async dispatch. Stops when WM_QUIT is received.
-        ## 
+proc startNativeEventLoop*() {.async.} =
+    ##
+    ## Runs the Windows event loop in a manner that's compatible with async dispatch. Stops when WM_QUIT is received.
+    ## 
 
-        # More planned, but for now stop if not on Windows
-        when not defined(windows):
-            return
+    # More planned, but for now stop if not on Windows
+    when not defined(windows):
+        return
+    else:
 
         # Only allow it to run once at a time
         var isRunning {.global.} = false
